@@ -142,7 +142,7 @@ class OCRProtocol:
                 self.state = State.OCRProcessing
             
             # 이미지 데이터 유효성 검사
-            if not data or len(data) < 100:  # 최소 이미지 크기 확인
+            if not data or len(data) < 16:  # 최소 헤더 크기 확인
                 print_log(f"유효하지 않은 이미지 데이터: 크기 {len(data) if data else 0} 바이트", "error")
                 self._send_message(Command.OCRInference_Ack_Fail)
                 with self.state_lock:
@@ -154,25 +154,37 @@ class OCRProtocol:
             
             # 이미지 디코딩
             try:
-                nparr = np.frombuffer(data, np.uint8)
-                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                # 헤더에서 B, C, H, W 값 추출
+                B, C, H, W = struct.unpack('<IIII', data[:16])
+                print_log(f"이미지 형태: ({B}, {C}, {H}, {W})", "info")
+                
+                # 나머지 데이터를 NumPy 배열로 변환
+                img_data = np.frombuffer(data[16:], dtype=np.uint8).reshape(B, C, H, W)
+                
+                # 첫 번째 이미지만 사용 (배치가 1보다 큰 경우)
+                img_data = img_data[0]  # (C, H, W)
+                
+                # 채널 순서 변경 (C, H, W) -> (H, W, C)
+                img = np.transpose(img_data, (1, 2, 0))
                 
                 # 이미지 유효성 검사
                 if img is None or img.size == 0:
-                    print_log("이미지를 디코딩할 수 없습니다", "error")
+                    print_log("이미지 데이터가 유효하지 않습니다", "error")
                     with self.state_lock:
                         self.state = State.Ready
                     return
                 
                 # 이미지 크기 및 형식 출력
                 h, w = img.shape[:2]
-                print_log(f"이미지 디코딩 완료: {w}x{h} 픽셀, {img.dtype}", "info")
+                print_log(f"이미지 변환 완료: {w}x{h} 픽셀, {img.dtype}", "info")
                 
                 # OCR 처리를 별도 쓰레드에서 실행
                 Thread(target=self._process_ocr, args=(img,)).start()
                 
             except Exception as e:
                 print_log(f"이미지 디코딩 오류: {e}", "error")
+                import traceback
+                print_log(traceback.format_exc(), "error")
                 with self.state_lock:
                     self.state = State.Ready
                 self._send_message(Command.OCRInference_Ack_Fail)
@@ -692,7 +704,7 @@ def main():
     # 설정 로드
     # host = "127.0.0.1"
     host = "0.0.0.0"
-    port = 8870
+    port = 8881
     craft_model_path = 'CRAFT-pytorch/weights/craft_mlt_25k.pth'
     lang_list = ['ko', 'en']
     lang_list = ['en']
