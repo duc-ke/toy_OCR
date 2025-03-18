@@ -174,14 +174,13 @@ class OCRClient:
             print("OCR 모델 로드 실패")
             return False
     
-    def ocr_image(self, image_path=None, image=None, wait_for_result=True, image_format='.png'):
+    def ocr_image(self, image_path=None, image=None, wait_for_result=True):
         """이미지 OCR 처리
         
         Args:
             image_path: 처리할 이미지 파일 경로
             image: 이미지 객체 (NumPy 배열)
             wait_for_result: 결과를 기다릴지 여부
-            image_format: 이미지 인코딩 형식 ('.png', '.jpg' 등)
         
         Returns:
             OCR 결과 텍스트 또는 처리 상태
@@ -209,24 +208,40 @@ class OCRClient:
                 new_w, new_h = int(w * scale), int(h * scale)
                 print(f"이미지 리사이징: {w}x{h} -> {new_w}x{new_h}")
                 image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            
-            # 이미지 인코딩 (PNG는 무손실이지만 큼, JPEG는 손실 압축으로 작음)
-            if image_format.lower() == '.png':
-                _, img_encoded = cv2.imencode('.png', image)
+                
+            # 이미지 형식 변환 및 헤더 생성 (B, C, H, W) 형태로 변환
+            # B: 배치 크기 (1개), C: 채널 수 (BGR=3), H: 높이, W: 너비
+            if len(image.shape) == 3:
+                h, w, c = image.shape
+                # 이미지를 (B, C, H, W) 형태로 변환
+                img_array = np.expand_dims(np.transpose(image, (2, 0, 1)), axis=0)  # (1, 3, H, W)
             else:
-                # JPEG 압축 품질 설정 (0-100)
-                encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
-                _, img_encoded = cv2.imencode('.jpg', image, encode_params)
+                h, w = image.shape
+                c = 1
+                # 그레이스케일 이미지를 (B, C, H, W) 형태로 변환
+                img_array = np.expand_dims(np.expand_dims(image, axis=0), axis=0)  # (1, 1, H, W)
             
-            img_bytes = img_encoded.tobytes()
-            img_size_kb = len(img_bytes) / 1024
-            print(f"이미지 인코딩 완료: {img_size_kb:.1f} KB")
+            # uint8로 변환 (필요한 경우)
+            if img_array.dtype != np.uint8:
+                img_array = img_array.astype(np.uint8)
+                
+            # 헤더 데이터 생성 (B, C, H, W)
+            B, C, H, W = img_array.shape
+            header_data = struct.pack('<IIII', B, C, H, W)
+            
+            # 이미지 데이터를 바이트로 변환
+            image_data = img_array.tobytes()
+            
+            # 전체 데이터 조합
+            data = header_data + image_data
+            data_size_mb = len(data) / (1024 * 1024)
+            print(f"이미지 전송 준비 완료: {data_size_mb:.2f} MB, 형태: ({B}, {C}, {H}, {W})")
             
             # 이미지 전송
             try:
-                message = self.build_message(Command.OCRInference, img_bytes)
+                message = self.build_message(Command.OCRInference, data)
                 self.send_message(message)
-                print(f"이미지 전송 완료: {img_size_kb:.1f} KB")
+                print(f"이미지 전송 완료: {data_size_mb:.2f} MB")
             except Exception as e:
                 raise ConnectionError(f"이미지 전송 실패: {e}")
             
