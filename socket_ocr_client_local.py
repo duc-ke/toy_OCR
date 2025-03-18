@@ -174,14 +174,14 @@ class OCRClient:
             print("OCR 모델 로드 실패")
             return False
     
-    def ocr_image(self, image_path=None, image=None, wait_for_result=True, image_format='.png'):
+    def ocr_image(self, image_path=None, image=None, wait_for_result=True, image_format=None):
         """이미지 OCR 처리
         
         Args:
             image_path: 처리할 이미지 파일 경로
             image: 이미지 객체 (NumPy 배열)
             wait_for_result: 결과를 기다릴지 여부
-            image_format: 이미지 인코딩 형식 ('.png', '.jpg' 등)
+            image_format: 이미지 형식 ('.jpg', '.png' 등, 전송 시 사용)
         
         Returns:
             OCR 결과 텍스트 또는 처리 상태
@@ -209,24 +209,37 @@ class OCRClient:
                 new_w, new_h = int(w * scale), int(h * scale)
                 print(f"이미지 리사이징: {w}x{h} -> {new_w}x{new_h}")
                 image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            
-            # 이미지 인코딩 (PNG는 무손실이지만 큼, JPEG는 손실 압축으로 작음)
-            if image_format.lower() == '.png':
-                _, img_encoded = cv2.imencode('.png', image)
+                
+            # 이미지 형식 확인
+            if len(image.shape) == 3:
+                h, w, c = image.shape
             else:
-                # JPEG 압축 품질 설정 (0-100)
-                encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
-                _, img_encoded = cv2.imencode('.jpg', image, encode_params)
+                h, w = image.shape
+                c = 1
+                # 그레이스케일 이미지를 3채널로 변환
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+                h, w, c = image.shape
             
-            img_bytes = img_encoded.tobytes()
-            img_size_kb = len(img_bytes) / 1024
-            print(f"이미지 인코딩 완료: {img_size_kb:.1f} KB")
+            # uint8로 변환 (필요한 경우)
+            if image.dtype != np.uint8:
+                image = image.astype(np.uint8)
+                
+            # 헤더 데이터 생성 (H, W, C) - 배치 차원 제거
+            header_data = struct.pack('<III', h, w, c)
+            
+            # 이미지 데이터를 바이트로 변환 (배열 직접 변환)
+            image_data = image.tobytes()
+            
+            # 전체 데이터 조합
+            data = header_data + image_data
+            data_size_mb = len(data) / (1024 * 1024)
+            print(f"이미지 전송 준비 완료: {data_size_mb:.2f} MB, 형태: ({h}, {w}, {c})")
             
             # 이미지 전송
             try:
-                message = self.build_message(Command.OCRInference, img_bytes)
+                message = self.build_message(Command.OCRInference, data)
                 self.send_message(message)
-                print(f"이미지 전송 완료: {img_size_kb:.1f} KB")
+                print(f"이미지 전송 완료: {data_size_mb:.2f} MB")
             except Exception as e:
                 raise ConnectionError(f"이미지 전송 실패: {e}")
             
@@ -442,7 +455,7 @@ def visualize_ocr_results(image_path, regions, output_path=None):
         traceback.print_exc()
         return None
 
-def ocr_test(image_path='jupyters/testimgocr.png', check_model=False, host='127.0.0.1', port=8870, image_format='.jpg', save_visualization=True):
+def ocr_test(image_path='test_imgs/testimgocr.png', check_model=False, host='127.0.0.1', port=8870, image_format='.jpg', save_visualization=True):
     """OCR 테스트"""
     client = OCRClient(host=host, port=port)
     
@@ -481,7 +494,7 @@ def ocr_test(image_path='jupyters/testimgocr.png', check_model=False, host='127.
                 print("\n=== OCR 결과 ===")
                 
                 # 출력 디렉토리 생성
-                output_dir = 'jupyters/output'
+                output_dir = 'output'
                 os.makedirs(output_dir, exist_ok=True)
                 
                 # 결과 텍스트 저장
@@ -604,15 +617,15 @@ if __name__ == "__main__":
     save_visualization = not args.no_vis
     
     # 기본 이미지 경로
-    default_image_path = 'jupyters/testimgocr.png'
+    default_image_path = '1.testimgocr.png'
     
     # 기본 이미지가 없으면 대체 경로 시도
     if not os.path.exists(default_image_path):
         alt_paths = [
             'testimgocr.png',  # 현재 디렉토리
             os.path.join(os.path.dirname(os.path.abspath(__file__)), 'testimgocr.png'),  # 스크립트 위치
-            'jupyters/1-1.testimgocr2.JPG',  # 대체 파일
-            'jupyters/test_images/testimgocr.png'  # 테스트 디렉토리
+            'test_imgs/1-1.testimgocr2.JPG',  # 대체 파일
+            'test_imgs/testimgocr.png'  # 테스트 디렉토리
         ]
         
         for path in alt_paths:
