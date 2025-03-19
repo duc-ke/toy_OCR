@@ -6,6 +6,10 @@ CRAFT와 EasyOCR을 활용하여 만든 OCR
 
 
 ## requirements
+### A. 환경구성 w/bash script
+* `bash requirements.sh` 실행
+
+### B. script 설치가 불가한 경우
 * `socket_ocr.py` 또는 `ocrtest.py` 실행 시 필요 라이브러리 자동 설치
 * 단, CRAFT의 가중치는 **꼭 수동 다운로드** 받아야함
   * [ClovaAI - CRAFT git](https://github.com/clovaai/CRAFT-pytorch?tab=readme-ov-file) 페이지 방문, General model (`craft_mlt_25k.pth`) 다운로드
@@ -15,3 +19,10 @@ CRAFT와 EasyOCR을 활용하여 만든 OCR
 ## 실행
 * ocrtest.py : 로컬 이미지 ocr 실행
 * socket_ocr.py : 통신 기반 ocr 실행
+
+
+## 샘플 결과
+
+| 입력 이미지 | OCR 결과 이미지 |
+|:---:|:---:|
+| ![입력 이미지](test_imgs/1.testimgocr.png) | ![결과 이미지](test_imgs/result_sample.jpg) |
