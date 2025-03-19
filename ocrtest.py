@@ -93,9 +93,11 @@ def load_craft_model(model_path):
     try:
         # 모델 상태 사전 로드
         if torch.cuda.is_available():
-            state_dict = torch.load(model_path)
+            # state_dict = torch.load(model_path)
+            state_dict = torch.load(model_path, weights_only=True)
         else:
-            state_dict = torch.load(model_path, map_location='cpu')
+            # state_dict = torch.load(model_path, map_location='cpu')
+            state_dict = torch.load(model_path, map_location='cpu', weights_only=True)
         
         # DataParallel로 저장된 모델 처리 (module. 접두사 제거)
         new_state_dict = {}
